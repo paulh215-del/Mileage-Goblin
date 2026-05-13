@@ -173,7 +173,7 @@ function defaultWeek() {
 function safeEvalMiles(value) {
   const raw = String(value ?? "").trim();
   if (!raw) return 0;
-  if (!/^[0-9+\-.\\s]+$/.test(raw)) return 0;
+  if (!/^[0-9+\-.\s]+$/.test(raw)) return 0;
   try {
     const result = Function('"use strict"; return (' + raw + ');')();
     return Number.isFinite(result) ? Math.max(0, result) : 0;
@@ -194,29 +194,29 @@ function save() {
   setTimeout(() => status.textContent = "Autosaved", 700);
 }
 function activeWeek() { return weeks.find(w => w.id === activeId) || weeks[0]; }
-function render() {
+
+/* ============================================================
+   Rendering is split into three layers so we never rebuild
+   inputs while the user is typing into them.
+
+   renderShell()  - rebuilds week-name/target inputs and the
+                    day cards. Called on tab switch, new/copy/
+                    delete/reset/import. NEVER on keystroke.
+
+   renderTabs()   - rebuilds the week tab buttons. Cheap, no
+                    focused inputs live in there.
+
+   renderTotals() - recomputes totals, bars, and the per-day
+                    helper text. Called on every keystroke.
+                    Does not touch any input element.
+   ============================================================ */
+
+function renderShell() {
   const week = activeWeek();
   activeId = week.id;
 
-  document.getElementById("weekTabs").innerHTML = weeks.map(w => 
-    `<button class="${w.id === activeId ? "active" : ""}" onclick="activeId='${w.id}'; render();">${escapeHtml(w.name)}</button>`
-  ).join("");
-
   document.getElementById("weekName").value = week.name;
   document.getElementById("targetMiles").value = week.target;
-
-  const planned = week.days.reduce((s,d) => s + safeEvalMiles(d.planned), 0);
-  const actual = week.days.reduce((s,d) => s + safeEvalMiles(d.actual), 0);
-  const target = Number(week.target) || 0;
-  const remPlanned = target - planned;
-  document.getElementById("plannedTotal").textContent = `${fmt(planned)} mi`;
-  document.getElementById("actualTotal").textContent = `${fmt(actual)} mi`;
-  document.getElementById("plannedSub").textContent = `${fmt(Math.abs(remPlanned))} ${remPlanned >= 0 ? "under" : "over"} target`;
-  document.getElementById("actualSub").textContent = `${fmt(Math.max(0, planned - actual))} planned left`;
-  document.getElementById("plannedProgress").textContent = `${fmt(planned)} / ${fmt(target)} mi`;
-  document.getElementById("actualProgress").textContent = `${fmt(actual)} / ${fmt(target)} mi`;
-  document.getElementById("plannedFill").style.width = `${target ? Math.min(100, planned / target * 100) : 0}%`;
-  document.getElementById("actualFill").style.width = `${target ? Math.min(100, actual / target * 100) : 0}%`;
 
   document.getElementById("days").innerHTML = week.days.map((d, i) => `
     <div class="card dayCard">
@@ -224,12 +224,12 @@ function render() {
       <div>
         <label>Planned</label>
         <input value="${escapeAttr(d.planned)}" oninput="updateDay(${i}, 'planned', this.value)" placeholder="0 or 4+2">
-        <div class="helper">${fmt(safeEvalMiles(d.planned))} mi</div>
+        <div class="helper" id="plannedHelper-${i}">${fmt(safeEvalMiles(d.planned))} mi</div>
       </div>
       <div>
         <label>Actual</label>
         <input value="${escapeAttr(d.actual)}" oninput="updateDay(${i}, 'actual', this.value)" placeholder="blank until done">
-        <div class="helper">${d.actual ? fmt(safeEvalMiles(d.actual)) + " mi" : "blank until done"}</div>
+        <div class="helper" id="actualHelper-${i}">${d.actual ? fmt(safeEvalMiles(d.actual)) + " mi" : "blank until done"}</div>
       </div>
       <div>
         <label>Type</label>
@@ -243,17 +243,64 @@ function render() {
       </div>
     </div>
   `).join("");
+
+  renderTabs();
+  renderTotals();
 }
+
+function renderTabs() {
+  document.getElementById("weekTabs").innerHTML = weeks.map(w =>
+    `<button class="${w.id === activeId ? "active" : ""}" onclick="switchWeek('${w.id}')">${escapeHtml(w.name)}</button>`
+  ).join("");
+}
+
+function renderTotals() {
+  const week = activeWeek();
+  const planned = week.days.reduce((s,d) => s + safeEvalMiles(d.planned), 0);
+  const actual = week.days.reduce((s,d) => s + safeEvalMiles(d.actual), 0);
+  const target = Number(week.target) || 0;
+  const remPlanned = target - planned;
+  document.getElementById("plannedTotal").textContent = `${fmt(planned)} mi`;
+  document.getElementById("actualTotal").textContent = `${fmt(actual)} mi`;
+  document.getElementById("plannedSub").textContent = `${fmt(Math.abs(remPlanned))} ${remPlanned >= 0 ? "under" : "over"} target`;
+  document.getElementById("actualSub").textContent = `${fmt(Math.max(0, planned - actual))} planned left`;
+  document.getElementById("plannedProgress").textContent = `${fmt(planned)} / ${fmt(target)} mi`;
+  document.getElementById("actualProgress").textContent = `${fmt(actual)} / ${fmt(target)} mi`;
+  document.getElementById("plannedFill").style.width = `${target ? Math.min(100, planned / target * 100) : 0}%`;
+  document.getElementById("actualFill").style.width = `${target ? Math.min(100, actual / target * 100) : 0}%`;
+
+  // Update only the helper text under each day's planned/actual,
+  // without touching the inputs themselves.
+  week.days.forEach((d, i) => {
+    const ph = document.getElementById(`plannedHelper-${i}`);
+    const ah = document.getElementById(`actualHelper-${i}`);
+    if (ph) ph.textContent = `${fmt(safeEvalMiles(d.planned))} mi`;
+    if (ah) ah.textContent = d.actual ? fmt(safeEvalMiles(d.actual)) + " mi" : "blank until done";
+  });
+}
+
+function switchWeek(id) {
+  activeId = id;
+  renderShell();
+}
+window.switchWeek = switchWeek;
+
+function updateDay(index, field, value) {
+  activeWeek().days[index][field] = value;
+  save();
+  // Only the derived numbers need to refresh on keystroke.
+  // The day cards stay put, so focus is preserved.
+  renderTotals();
+}
+window.updateDay = updateDay;
+
 function updateWeek(field, value) {
   const w = activeWeek();
   w[field] = value;
-  save(); render();
+  save();
+  if (field === "name") renderTabs();      // tab label needs to update
+  if (field === "target") renderTotals();  // bars + over/under target depend on this
 }
-function updateDay(index, field, value) {
-  activeWeek().days[index][field] = value;
-  save(); render();
-}
-window.updateDay = updateDay;
 
 document.getElementById("weekName").addEventListener("input", e => updateWeek("name", e.target.value));
 document.getElementById("targetMiles").addEventListener("input", e => updateWeek("target", e.target.value));
@@ -261,7 +308,7 @@ document.getElementById("newWeek").onclick = () => {
   const w = defaultWeek();
   w.name = `Week ${weeks.length + 1}`;
   w.days.forEach(d => d.actual = "");
-  weeks.push(w); activeId = w.id; save(); render();
+  weeks.push(w); activeId = w.id; save(); renderShell();
 };
 document.getElementById("copyWeek").onclick = () => {
   const src = activeWeek();
@@ -269,14 +316,14 @@ document.getElementById("copyWeek").onclick = () => {
   copy.id = uuid();
   copy.name = `${src.name} copy`;
   copy.days.forEach(d => d.actual = "");
-  weeks.push(copy); activeId = copy.id; save(); render();
+  weeks.push(copy); activeId = copy.id; save(); renderShell();
 };
 document.getElementById("resetWeek").onclick = () => {
   const reset = defaultWeek();
   reset.id = activeId;
   reset.name = activeWeek().name;
   weeks = weeks.map(w => w.id === activeId ? reset : w);
-  save(); render();
+  save(); renderShell();
 };
 document.getElementById("deleteWeek").onclick = () => {
   if (weeks.length === 1) {
@@ -285,7 +332,7 @@ document.getElementById("deleteWeek").onclick = () => {
     weeks = weeks.filter(w => w.id !== activeId);
   }
   activeId = weeks[0].id;
-  save(); render();
+  save(); renderShell();
 };
 document.getElementById("exportJson").onclick = () => {
   const blob = new Blob([JSON.stringify(weeks, null, 2)], { type: "application/json" });
@@ -302,14 +349,14 @@ document.getElementById("importJson").addEventListener("change", e => {
     try {
       const parsed = JSON.parse(String(reader.result));
       if (!Array.isArray(parsed) || !parsed.length) throw new Error("bad");
-      weeks = parsed; activeId = weeks[0].id; save(); render();
+      weeks = parsed; activeId = weeks[0].id; save(); renderShell();
     } catch { alert("That JSON file did not import cleanly."); }
   };
   reader.readAsText(file);
 });
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
-render();
+renderShell();
 </script>
   <script>
   if ('serviceWorker' in navigator) {
