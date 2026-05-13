@@ -1,5 +1,5 @@
 // Mileage Goblin service worker — minimal offline cache
-const CACHE = 'mileage-goblin-v1';
+const CACHE = 'mileage-goblin-v2';
 const ASSETS = [
   './',
   './index.html',
