@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Weekly Mileage Planner</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --panel: #18181b;
+      --panel2: #0f0f12;
+      --border: #303036;
+      --text: #f4f4f5;
+      --muted: #a1a1aa;
+      --muted2: #71717a;
+      --accent: #f4f4f5;
+      --accentText: #09090b;
+      --danger: #7f1d1d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 18px;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; }
+    h1 { margin: 8px 0 6px; font-size: clamp(32px, 6vw, 56px); line-height: 1; letter-spacing: -0.04em; }
+    p { color: var(--muted); margin: 0 0 18px; }
+    .eyebrow { display: flex; gap: 8px; align-items: center; color: var(--muted); text-transform: uppercase; letter-spacing: .16em; font-size: 12px; }
+    .toolbar, .weektabs, .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .top { display: flex; flex-direction: column; gap: 14px; margin-bottom: 18px; }
+    @media (min-width: 800px) { .top { flex-direction: row; align-items: end; justify-content: space-between; } }
+    button, .fileLabel {
+      border: 0;
+      border-radius: 16px;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+      background: #27272a;
+      color: var(--text);
+      font-size: 14px;
+    }
+    button.primary { background: var(--accent); color: var(--accentText); }
+    button.danger { background: var(--danger); color: #fff; }
+    button.active { background: var(--accent); color: var(--accentText); }
+    .fileLabel input { display: none; }
+    .card {
+      background: color-mix(in srgb, var(--panel) 88%, transparent);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 16px;
+      margin: 12px 0;
+      box-shadow: 0 14px 30px rgba(0,0,0,.22);
+    }
+    .summaryGrid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+    @media (min-width: 800px) { .summaryGrid { grid-template-columns: 1.2fr .8fr 1fr 1fr; } }
+    label { display: block; color: var(--muted2); text-transform: uppercase; letter-spacing: .14em; font-size: 11px; margin-bottom: 6px; }
+    input, select {
+      width: 100%;
+      background: var(--panel2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px 13px;
+      outline: none;
+      font-size: 16px;
+      font-weight: 650;
+    }
+    input:focus, select:focus { border-color: var(--muted); }
+    .metric { background: var(--panel2); border: 1px solid var(--border); border-radius: 22px; padding: 14px; }
+    .metric .value { font-size: 30px; font-weight: 900; margin-top: 3px; }
+    .metric .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .barText { display:flex; justify-content:space-between; color:var(--muted); font-size:13px; margin-top:14px; }
+    .bar { height: 11px; background:#27272a; border-radius:999px; overflow:hidden; margin-top:6px; }
+    .fill { height: 100%; background: var(--accent); border-radius:999px; width:0%; transition: width .2s ease; }
+    .fill.actual { background: #71717a; }
+    .dayCard {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: 1fr;
+      align-items: center;
+    }
+    @media (min-width: 900px) { .dayCard { grid-template-columns: 76px 1fr 1fr 150px 2fr; } }
+    .dayName { font-size: 28px; font-weight: 950; }
+    .helper { color: var(--muted2); font-size: 12px; margin-top: 5px; }
+    .saved { color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <div class="eyebrow">📅 Weekly mileage planner</div>
+        <h1>Plan the week. Ignore the goblin.</h1>
+        <p>Edit miles per day, use things like <b>4+2</b> for doubles, track planned vs actual, and everything autosaves in this browser.</p>
+      </div>
+      <div class="toolbar">
+        <button class="primary" id="newWeek">+ New week</button>
+        <button id="copyWeek">Copy</button>
+        <button id="exportJson">Export JSON</button>
+        <label class="fileLabel">Import JSON <input id="importJson" type="file" accept="application/json"></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center;">
+        <div class="weektabs" id="weekTabs"></div>
+        <div class="saved" id="savedStatus">Autosaved</div>
+      </div>
+
+      <div class="summaryGrid" style="margin-top:16px;">
+        <div>
+          <label>Week name</label>
+          <input id="weekName" />
+        </div>
+        <div>
+          <label>Target miles</label>
+          <input id="targetMiles" type="number" step="0.1" />
+        </div>
+        <div class="metric">
+          <label>Planned</label>
+          <div class="value" id="plannedTotal">0 mi</div>
+          <div class="sub" id="plannedSub"></div>
+        </div>
+        <div class="metric">
+          <label>Actual</label>
+          <div class="value" id="actualTotal">0 mi</div>
+          <div class="sub" id="actualSub"></div>
+        </div>
+      </div>
+
+      <div class="barText"><span>Planned progress</span><span id="plannedProgress"></span></div>
+      <div class="bar"><div class="fill" id="plannedFill"></div></div>
+      <div class="barText"><span>Actual progress</span><span id="actualProgress"></span></div>
+      <div class="bar"><div class="fill actual" id="actualFill"></div></div>
+    </div>
+
+    <div id="days"></div>
+
+    <div class="actions" style="justify-content:space-between; margin: 18px 0 40px;">
+      <button id="resetWeek">Reset this week</button>
+      <button class="danger" id="deleteWeek">Delete week</button>
+    </div>
+  </div>
+
+<script>
+const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const TYPES = ["Easy","Workout","Long","Rest","Race","Strength","Other"];
+const KEY = "weekly-mileage-planner-v1";
+
+function uuid() {
+  return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
+}
+function defaultWeek() {
+  return {
+    id: uuid(),
+    name: "Week 1",
+    target: 40,
+    days: DAYS.map(day => ({
+      day,
+      planned: day === "Mon" ? "4" : day === "Tue" ? "6" : day === "Wed" ? "5" : day === "Thu" ? "7" : day === "Fri" ? "0" : day === "Sat" ? "12" : "4+2",
+      actual: day === "Mon" ? "4" : "",
+      type: day === "Wed" ? "Workout" : day === "Sat" ? "Long" : day === "Fri" ? "Rest" : "Easy",
+      notes: day === "Wed" ? "Rolling 400s" : day === "Sun" ? "Easy double" : ""
+    }))
+  };
+}
+function safeEvalMiles(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return 0;
+  if (!/^[0-9+\-.\\s]+$/.test(raw)) return 0;
+  try {
+    const result = Function('"use strict"; return (' + raw + ');')();
+    return Number.isFinite(result) ? Math.max(0, result) : 0;
+  } catch { return Number(raw) || 0; }
+}
+function fmt(num) {
+  return Number.isInteger(num) ? String(num) : Number(num).toFixed(1).replace(/\.0$/, "");
+}
+
+let weeks;
+try { weeks = JSON.parse(localStorage.getItem(KEY)) || [defaultWeek()]; } catch { weeks = [defaultWeek()]; }
+let activeId = weeks[0].id;
+
+function save() {
+  localStorage.setItem(KEY, JSON.stringify(weeks));
+  const status = document.getElementById("savedStatus");
+  status.textContent = "Saved";
+  setTimeout(() => status.textContent = "Autosaved", 700);
+}
+function activeWeek() { return weeks.find(w => w.id === activeId) || weeks[0]; }
+function render() {
+  const week = activeWeek();
+  activeId = week.id;
+
+  document.getElementById("weekTabs").innerHTML = weeks.map(w => 
+    `<button class="${w.id === activeId ? "active" : ""}" onclick="activeId='${w.id}'; render();">${escapeHtml(w.name)}</button>`
+  ).join("");
+
+  document.getElementById("weekName").value = week.name;
+  document.getElementById("targetMiles").value = week.target;
+
+  const planned = week.days.reduce((s,d) => s + safeEvalMiles(d.planned), 0);
+  const actual = week.days.reduce((s,d) => s + safeEvalMiles(d.actual), 0);
+  const target = Number(week.target) || 0;
+  const remPlanned = target - planned;
+  document.getElementById("plannedTotal").textContent = `${fmt(planned)} mi`;
+  document.getElementById("actualTotal").textContent = `${fmt(actual)} mi`;
+  document.getElementById("plannedSub").textContent = `${fmt(Math.abs(remPlanned))} ${remPlanned >= 0 ? "under" : "over"} target`;
+  document.getElementById("actualSub").textContent = `${fmt(Math.max(0, planned - actual))} planned left`;
+  document.getElementById("plannedProgress").textContent = `${fmt(planned)} / ${fmt(target)} mi`;
+  document.getElementById("actualProgress").textContent = `${fmt(actual)} / ${fmt(target)} mi`;
+  document.getElementById("plannedFill").style.width = `${target ? Math.min(100, planned / target * 100) : 0}%`;
+  document.getElementById("actualFill").style.width = `${target ? Math.min(100, actual / target * 100) : 0}%`;
+
+  document.getElementById("days").innerHTML = week.days.map((d, i) => `
+    <div class="card dayCard">
+      <div class="dayName">${d.day}</div>
+      <div>
+        <label>Planned</label>
+        <input value="${escapeAttr(d.planned)}" oninput="updateDay(${i}, 'planned', this.value)" placeholder="0 or 4+2">
+        <div class="helper">${fmt(safeEvalMiles(d.planned))} mi</div>
+      </div>
+      <div>
+        <label>Actual</label>
+        <input value="${escapeAttr(d.actual)}" oninput="updateDay(${i}, 'actual', this.value)" placeholder="blank until done">
+        <div class="helper">${d.actual ? fmt(safeEvalMiles(d.actual)) + " mi" : "blank until done"}</div>
+      </div>
+      <div>
+        <label>Type</label>
+        <select onchange="updateDay(${i}, 'type', this.value)">
+          ${TYPES.map(t => `<option ${d.type === t ? "selected" : ""}>${t}</option>`).join("")}
+        </select>
+      </div>
+      <div>
+        <label>Notes</label>
+        <input value="${escapeAttr(d.notes)}" oninput="updateDay(${i}, 'notes', this.value)" placeholder="strides, rolling 400s, trails...">
+      </div>
+    </div>
+  `).join("");
+}
+function updateWeek(field, value) {
+  const w = activeWeek();
+  w[field] = value;
+  save(); render();
+}
+function updateDay(index, field, value) {
+  activeWeek().days[index][field] = value;
+  save(); render();
+}
+window.updateDay = updateDay;
+
+document.getElementById("weekName").addEventListener("input", e => updateWeek("name", e.target.value));
+document.getElementById("targetMiles").addEventListener("input", e => updateWeek("target", e.target.value));
+document.getElementById("newWeek").onclick = () => {
+  const w = defaultWeek();
+  w.name = `Week ${weeks.length + 1}`;
+  w.days.forEach(d => d.actual = "");
+  weeks.push(w); activeId = w.id; save(); render();
+};
+document.getElementById("copyWeek").onclick = () => {
+  const src = activeWeek();
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id = uuid();
+  copy.name = `${src.name} copy`;
+  copy.days.forEach(d => d.actual = "");
+  weeks.push(copy); activeId = copy.id; save(); render();
+};
+document.getElementById("resetWeek").onclick = () => {
+  const reset = defaultWeek();
+  reset.id = activeId;
+  reset.name = activeWeek().name;
+  weeks = weeks.map(w => w.id === activeId ? reset : w);
+  save(); render();
+};
+document.getElementById("deleteWeek").onclick = () => {
+  if (weeks.length === 1) {
+    weeks = [defaultWeek()];
+  } else {
+    weeks = weeks.filter(w => w.id !== activeId);
+  }
+  activeId = weeks[0].id;
+  save(); render();
+};
+document.getElementById("exportJson").onclick = () => {
+  const blob = new Blob([JSON.stringify(weeks, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "weekly-mileage-planner.json"; a.click();
+  URL.revokeObjectURL(url);
+};
+document.getElementById("importJson").addEventListener("change", e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(String(reader.result));
+      if (!Array.isArray(parsed) || !parsed.length) throw new Error("bad");
+      weeks = parsed; activeId = weeks[0].id; save(); render();
+    } catch { alert("That JSON file did not import cleanly."); }
+  };
+  reader.readAsText(file);
+});
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
+render();
+</script>
+</body>
+</html>
